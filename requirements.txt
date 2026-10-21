@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+pyodbc
+pydantic>=2
+pydantic-settings
+PyJWT[crypto]
+argon2-cffi
+python-multipart
+pytest
+httpx
+ruff
