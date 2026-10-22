@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import Optional, Any
 from app.core.db import get_db
 from app.core.deps import get_current_user
@@ -18,7 +19,7 @@ def get_picker_rows(
     user: dict = Depends(get_current_user),
 ):
     sql = "SELECT hdr_expr FROM [System].[Form.Headers] WHERE hdr_code = :code"
-    res = db.connection().exec_driver_sql(sql, {"code": code}).mappings().first()
+    res = db.execute(text(sql), {"code": code}).mappings().first()
     if not res or not res.get("hdr_expr"):
         return {"items": []}
 
@@ -57,7 +58,7 @@ def get_field_options(
     JOIN [System].[Form.Headers] h ON h.hdr_id = d.hdr_id
     WHERE h.hdr_code = :code AND d.col_name = :name
     """
-    res = db.connection().exec_driver_sql(sql, {"code": code, "name": name}).mappings().first()
+    res = db.execute(text(sql), {"code": code, "name": name}).mappings().first()
     if not res:
         return {"options": []}
     

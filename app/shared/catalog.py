@@ -1,6 +1,7 @@
 import time
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.core.config import settings
 
 _catalog_cache: Dict[str, tuple[float, List[Dict[str, Any]]]] = {}
@@ -23,7 +24,7 @@ def get_table_catalog(db: Session, table_name: str) -> List[Dict[str, Any]]:
     WHERE c.object_id = OBJECT_ID(:table_name);
     """
     try:
-        result = db.connection().exec_driver_sql(sql, {"table_name": table_name})
+        result = db.execute(text(sql), {"table_name": table_name})
         columns = []
         for row in result:
             columns.append({

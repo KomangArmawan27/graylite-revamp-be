@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import Optional, List
 from app.core.db import get_db
 from app.core.deps import get_current_user
@@ -27,7 +28,7 @@ def get_browser_rows(
     
     # Get header expression
     sql_meta = "SELECT hdr_expr FROM [System].[Form.Headers] WHERE hdr_code = :code"
-    res = db.connection().exec_driver_sql(sql_meta, {"code": code}).mappings().first()
+    res = db.execute(text(sql_meta), {"code": code}).mappings().first()
     if not res or not res.get("hdr_expr"):
         return {"items": [], "pageSize": pageSize, "hasMore": False, "nextCursor": None}
 

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 import jwt
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
+from argon2.exceptions import VerifyMismatchError, InvalidHashError
 from app.core.config import settings
 
 ph = PasswordHasher()
@@ -11,17 +11,38 @@ ph = PasswordHasher()
 def hash_password(password: str) -> str:
     return ph.hash(password)
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    try:
-        return ph.verify(hashed_password, plain_password)
-    except VerifyMismatchError:
-        # Check legacy hash or fallback if needed (e.g. SHA1 stub)
+def verify_password(plain_password: str, hashed_password: Any) -> bool:
+    if not hashed_password:
+        return False
+
+    if isinstance(hashed_password, bytes):
         import hashlib
-        sha1_hash = hashlib.sha1(plain_password.encode("utf-8")).digest()
-        # If hashed_password is 20-byte bytes or hex/etc
-        if isinstance(hashed_password, bytes) and hashed_password == sha1_hash:
+        if len(hashed_password) == 20:
+            if hashlib.sha1(plain_password.encode("utf-8")).digest() == hashed_password:
+                return True
+        if len(hashed_password) == 16:
+            if hashlib.md5(plain_password.encode("utf-8")).digest() == hashed_password:
+                return True
+        if plain_password.encode("utf-8") == hashed_password:
             return True
         return False
+
+    if isinstance(hashed_password, str):
+        if plain_password == hashed_password:
+            return True
+
+        if hashed_password.startswith("$argon2"):
+            try:
+                return ph.verify(hashed_password, plain_password)
+            except (VerifyMismatchError, InvalidHashError):
+                return False
+
+        import hashlib
+        if len(hashed_password) == 40:
+            if hashlib.sha1(plain_password.encode("utf-8")).hexdigest().lower() == hashed_password.lower():
+                return True
+
+    return False
 
 def _get_private_key() -> Optional[str]:
     path = settings.JWT_PRIVATE_KEY_PATH
@@ -62,9 +83,9 @@ def verify_token(token: str) -> dict[str, Any]:
     public_key = _get_public_key()
     try:
         if public_key:
-            return jwt.decode(token, public_key, algorithms=["RS256"])
+            return jwt.decode(token, public_key, algorithms=["RS256"], options={"verify_sub": False})
         else:
-            return jwt.decode(token, "dev-secret-key", algorithms=["HS256"])
+            return jwt.decode(token, "dev-secret-key", algorithms=["HS256"], options={"verify_sub": False})
     except jwt.PyJWTError as e:
         from app.core.errors import AppError
         raise AppError(status_code=401, code="unauthorized", message="Invalid or expired token")

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import Any, Dict
 from app.core.db import get_db, get_db_write
 from app.core.deps import get_current_user
@@ -25,7 +26,7 @@ def get_form_record(code: str, id: Any, db: Session = Depends(get_db), user: dic
     
     # Get base table from header
     sql = "SELECT hdr_basetable, hdr_expr FROM [System].[Form.Headers] WHERE hdr_code = :code"
-    res = db.connection().exec_driver_sql(sql, {"code": code, "id": id}).mappings().first()
+    res = db.execute(text(sql), {"code": code}).mappings().first()
     if not res:
         raise AppError(status_code=404, code="not_found", message=f"Form not found: {code}")
 
@@ -38,7 +39,7 @@ def get_form_record(code: str, id: Any, db: Session = Depends(get_db), user: dic
     else:
         query = f"SELECT * FROM ({base_table}) x WHERE x.[{meta.get('idField', 'id')}] = :id"
 
-    header_row = db.connection().exec_driver_sql(query, {"id": id}).mappings().first()
+    header_row = db.execute(text(query), {"id": id}).mappings().first()
     if not header_row:
         raise AppError(status_code=404, code="not_found", message=f"Record not found: {id}")
 
@@ -62,7 +63,7 @@ def create_form_record(code: str, payload: dict, db: Session = Depends(get_db_wr
     
     # Get base table
     sql = "SELECT hdr_basetable FROM [System].[Form.Headers] WHERE hdr_code = :code"
-    res = db.connection().exec_driver_sql(sql, {"code": code}).mappings().first()
+    res = db.execute(text(sql), {"code": code}).mappings().first()
     if not res or not res.get("hdr_basetable"):
         raise AppError(status_code=400, code="bad_request", message="Base table not found for form")
     
@@ -85,7 +86,7 @@ def create_form_record(code: str, payload: dict, db: Session = Depends(get_db_wr
     SELECT id FROM @o;
     """
     try:
-        row = db.connection().exec_driver_sql(insert_sql, header_data).first()
+        row = db.execute(text(insert_sql), header_data).first()
         new_id = row[0] if row else None
         db.commit()
         return get_form_record(code, new_id, db, user)
@@ -104,7 +105,7 @@ def update_form_record(code: str, id: Any, payload: dict, db: Session = Depends(
 
     header_data = payload.get("header", {})
     sql = "SELECT hdr_basetable FROM [System].[Form.Headers] WHERE hdr_code = :code"
-    res = db.connection().exec_driver_sql(sql, {"code": code}).mappings().first()
+    res = db.execute(text(sql), {"code": code}).mappings().first()
     if not res or not res.get("hdr_basetable"):
         raise AppError(status_code=400, code="bad_request", message="Base table not found")
     
@@ -118,7 +119,7 @@ def update_form_record(code: str, id: Any, payload: dict, db: Session = Depends(
     try:
         # Row lock and edit lock check
         lock_sql = f"SELECT [{lock_field}] FROM {base_table} WITH (UPDLOCK, ROWLOCK) WHERE [{pk_field}] = :id"
-        lock_row = db.connection().exec_driver_sql(lock_sql, {"id": id}).mappings().first()
+        lock_row = db.execute(text(lock_sql), {"id": id}).mappings().first()
         if not lock_row:
             raise AppError(status_code=404, code="not_found", message="Record not found")
         
@@ -129,7 +130,7 @@ def update_form_record(code: str, id: Any, payload: dict, db: Session = Depends(
         update_data = {**header_data, "id": id}
         update_sql = f"UPDATE {base_table} SET {set_clauses} WHERE [{pk_field}] = :id"
         
-        db.connection().exec_driver_sql(update_sql, update_data)
+        db.execute(text(update_sql), update_data)
         db.commit()
         return get_form_record(code, id, db, user)
     except AppError:

@@ -1,36 +1,37 @@
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.shared.types import normalize_type
 
 class MetaRepository:
     def get_header_by_code(self, db: Session, code: str) -> Optional[Dict[str, Any]]:
         sql = "SELECT * FROM [System].[Form.Headers] WHERE hdr_code = :code"
-        res = db.connection().exec_driver_sql(sql, {"code": code}).mappings().first()
+        res = db.execute(text(sql), {"code": code}).mappings().first()
         return dict(res) if res else None
 
     def get_browser_columns(self, db: Session, hdr_id: int) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM [System].[Form.Browsers] WHERE hdr_id = :hdr_id ORDER BY col_order"
-        rows = db.connection().exec_driver_sql(sql, {"hdr_id": hdr_id}).mappings().all()
+        rows = db.execute(text(sql), {"hdr_id": hdr_id}).mappings().all()
         return [dict(r) for r in rows]
 
     def get_form_details(self, db: Session, hdr_id: int) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM [System].[Form.Details] WHERE hdr_id = :hdr_id ORDER BY col_order"
-        rows = db.connection().exec_driver_sql(sql, {"hdr_id": hdr_id}).mappings().all()
+        rows = db.execute(text(sql), {"hdr_id": hdr_id}).mappings().all()
         return [dict(r) for r in rows]
 
     def get_grid_columns(self, db: Session, hdr_id: int) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM [System].[Form.Grids] WHERE hdr_id = :hdr_id ORDER BY col_order"
-        rows = db.connection().exec_driver_sql(sql, {"hdr_id": hdr_id}).mappings().all()
+        rows = db.execute(text(sql), {"hdr_id": hdr_id}).mappings().all()
         return [dict(r) for r in rows]
 
     def get_variables(self, db: Session, hdr_id: int) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM [System].[Form.Variables] WHERE hdr_id = :hdr_id ORDER BY var_order"
-        rows = db.connection().exec_driver_sql(sql, {"hdr_id": hdr_id}).mappings().all()
+        rows = db.execute(text(sql), {"hdr_id": hdr_id}).mappings().all()
         return [dict(r) for r in rows]
 
     def get_commands(self, db: Session, hdr_id: int) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM [System].[Form.Commands] WHERE hdr_id = :hdr_id ORDER BY cmd_order"
-        rows = db.connection().exec_driver_sql(sql, {"hdr_id": hdr_id}).mappings().all()
+        rows = db.execute(text(sql), {"hdr_id": hdr_id}).mappings().all()
         return [dict(r) for r in rows]
 
     def infer_columns_from_query(self, db: Session, expr: str) -> List[Dict[str, Any]]:

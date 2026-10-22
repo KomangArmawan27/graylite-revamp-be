@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import Optional, Any
 from app.core.db import get_db
 from app.core.deps import get_current_user
@@ -15,7 +16,7 @@ def get_grid_rows(
 ):
     # Get grid query from Form.Headers
     sql = "SELECT hdr_expr FROM [System].[Form.Headers] WHERE hdr_code = :code"
-    res = db.connection().exec_driver_sql(sql, {"code": code}).mappings().first()
+    res = db.execute(text(sql), {"code": code}).mappings().first()
     if not res or not res.get("hdr_expr"):
         return {"items": []}
 
@@ -30,7 +31,7 @@ def get_grid_rows(
         params = {"parentId": parentId}
 
     try:
-        rows = db.connection().exec_driver_sql(query, params).mappings().all()
+        rows = db.execute(text(query), params).mappings().all()
         return {"items": [dict(r) for r in rows]}
     except Exception:
         return {"items": []}

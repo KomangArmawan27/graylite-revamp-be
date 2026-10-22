@@ -1,6 +1,7 @@
 import re
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import Any, Dict, List
 from app.core.db import get_db_write
 from app.core.deps import get_current_user
@@ -18,7 +19,7 @@ def run_command(
 ):
     # Fetch command
     sql = "SELECT * FROM [System].[Form.Commands] WHERE cmd_id = :cmdId"
-    cmd = db.connection().exec_driver_sql(sql, {"cmdId": cmdId}).mappings().first()
+    cmd = db.execute(text(sql), {"cmdId": cmdId}).mappings().first()
     if not cmd:
         raise AppError(status_code=404, code="not_found", message="Command not found")
 

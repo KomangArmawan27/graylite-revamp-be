@@ -1,6 +1,7 @@
 import uuid
 from typing import Any, Dict
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.core.errors import AppError
 from app.core.security import verify_password, create_access_token, create_refresh_token, verify_token
 from app.modules.auth.repository import AuthRepository
@@ -58,7 +59,7 @@ class AuthService:
         
         # Verify user still active
         sql = "SELECT * FROM [System].[User.Management] WHERE user_id = :user_id"
-        user = db.connection().exec_driver_sql(sql, {"user_id": user_id}).mappings().first()
+        user = db.execute(text(sql), {"user_id": user_id}).mappings().first()
         if not user or not user.get("is_active", True):
             raise AppError(status_code=401, code="unauthorized", message="User inactive or removed")
 
