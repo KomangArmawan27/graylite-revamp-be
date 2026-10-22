@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from typing import Optional, List
+from typing import Optional
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.shared.params import bind
@@ -11,9 +11,9 @@ from app.core.config import settings
 router = APIRouter(prefix="/browsers", tags=["browsers"])
 meta_service = MetaService()
 
-@router.get("/{code}/rows")
+@router.get("/{hdrId}/rows")
 def get_browser_rows(
-    code: str,
+    hdrId: int,
     request: Request,
     pageSize: int = Query(50, ge=1, le=1000),
     cursor: Optional[str] = None,
@@ -23,21 +23,16 @@ def get_browser_rows(
     user: dict = Depends(get_current_user),
 ):
     user_roles = user.get("roles", [])
-    # Validate browser meta and role
-    browser_meta = meta_service.get_browser_meta(db, code, user_roles)
+    browser_meta = meta_service.get_browser_meta(db, hdrId, user_roles)
     
-    # Get header expression
-    sql_meta = "SELECT hdr_expr FROM [System].[Form.Headers] WHERE hdr_code = :code"
-    res = db.execute(text(sql_meta), {"code": code}).mappings().first()
-    if not res or not res.get("hdr_expr"):
+    header = meta_service.get_screen(db, hdrId)
+    expr = (header.get("hdr_expr") or "").strip()
+    if not expr:
         return {"items": [], "pageSize": pageSize, "hasMore": False, "nextCursor": None}
 
-    expr = res.get("hdr_expr").strip()
-    # If expr is bare table/view/function name without SELECT
     if not expr.lower().startswith("select"):
         expr = f"SELECT * FROM {expr}"
 
-    # Build session values and request filter query params
     query_params = dict(request.query_params)
     param_values = {
         "_USERID": user.get("id"),
@@ -45,14 +40,11 @@ def get_browser_rows(
         "_CCID": user.get("ccId"),
         "_USERLEVEL": ",".join(user_roles),
     }
-    # Add query params (filters)
     for k, v in query_params.items():
         if not k.startswith("_") and k not in ("pageSize", "cursor", "q", "sort"):
             param_values[k] = v
 
     bound_sql, bound_params = bind(expr, param_values)
-
-    # Wrap with row cap and pagination
     wrapped_sql = f"SELECT TOP {min(pageSize + 1, settings.ROW_CAP)} * FROM ({bound_sql}) x"
     
     try:

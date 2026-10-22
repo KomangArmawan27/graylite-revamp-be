@@ -128,13 +128,7 @@ Default: **disabled** (`ENABLE_DELETE=false`, returns `501 not_implemented`). Wh
 
 ## Errors from the database
 
-| SQL situation | API result |
-|---|---|
-| `THROW`/`RAISERROR` text raised on purpose (user-defined error numbers 50000+) | 409 or 422 with that message |
-| Unique, foreign key or check constraint violation | 409 `conflict` with a generic message; log details |
-| Deadlock (1205) | Retry the transaction once, then 409 |
-| Timeout | 504 `query_timeout` |
-| Anything else | 500 `internal_error`; log SQL error number and text with the request id |
+Database errors are mapped centrally via `app/core/errors.py` (see `docs/11-pagination-and-errors.md`).
 
 ## schemaVersion
 

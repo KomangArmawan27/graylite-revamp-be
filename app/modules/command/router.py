@@ -7,21 +7,32 @@ from app.core.db import get_db_write
 from app.core.deps import get_current_user
 from app.shared.params import bind
 from app.core.errors import AppError
+from app.modules.meta.service import MetaService
+from app.shared.roles import allowed
 
-router = APIRouter(prefix="/commands", tags=["commands"])
+router = APIRouter(prefix="/screens", tags=["commands"])
+meta_service = MetaService()
 
-@router.post("/{cmdId}/run")
+@router.post("/{hdrId}/commands/{cmdId}/run")
 def run_command(
+    hdrId: int,
     cmdId: int,
     payload: dict,
     db: Session = Depends(get_db_write),
     user: dict = Depends(get_current_user),
 ):
-    # Fetch command
+    user_roles = user.get("roles", [])
+    screen = meta_service.get_screen(db, hdrId)
+    if not allowed(screen.get("hdr_level"), user_roles):
+        raise AppError(status_code=403, code="forbidden", message="Access denied")
+
     sql = "SELECT * FROM [System].[Form.Commands] WHERE cmd_id = :cmdId"
     cmd = db.execute(text(sql), {"cmdId": cmdId}).mappings().first()
-    if not cmd:
+    if not cmd or cmd.get("hdr_id") != hdrId:
         raise AppError(status_code=404, code="not_found", message="Command not found")
+
+    if not allowed(cmd.get("cmd_privilege"), user_roles):
+        raise AppError(status_code=403, code="forbidden", message="Command permission denied")
 
     controlexpr = cmd.get("cmd_controlexpr")
     if not controlexpr:
@@ -44,11 +55,9 @@ def run_command(
             try:
                 bound_sql, bound_params = bind(stmt, param_values)
                 result = db.connection().exec_driver_sql(bound_sql, tuple(bound_params))
-                # Check if result returns text instructions
                 for row in result:
                     for val in row:
                         if isinstance(val, str):
-                            # Parse actions
                             v_clean = val.strip()
                             if v_clean == "REFRESHFORM();":
                                 actions.append({"type": "refresh"})
@@ -60,7 +69,7 @@ def run_command(
                                 actions.append({"type": "alert", "message": msg})
                             else:
                                 dropped += 1
-            except Exception as e:
+            except Exception:
                 pass
         else:
             dropped += 1

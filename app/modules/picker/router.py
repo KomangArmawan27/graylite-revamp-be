@@ -5,12 +5,14 @@ from typing import Optional, Any
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.shared.params import bind
+from app.modules.meta.service import MetaService
 
-router = APIRouter(tags=["pickers"])
+router = APIRouter(prefix="/pickers", tags=["pickers"])
+meta_service = MetaService()
 
-@router.get("/v1/pickers/{code}/rows")
+@router.get("/{hdrId}/rows")
 def get_picker_rows(
-    code: str,
+    hdrId: int,
     q: Optional[str] = None,
     page: int = 1,
     pageSize: int = 50,
@@ -18,12 +20,15 @@ def get_picker_rows(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    sql = "SELECT hdr_expr FROM [System].[Form.Headers] WHERE hdr_code = :code"
-    res = db.execute(text(sql), {"code": code}).mappings().first()
-    if not res or not res.get("hdr_expr"):
+    header = meta_service.get_screen(db, hdrId)
+    if (header.get("hdr_type") or "").upper() != "PICKER":
+        from app.core.errors import AppError
+        raise AppError(status_code=404, code="wrong_screen_type", message=f"Expected PICKER, got {header.get('hdr_type')}")
+
+    expr = (header.get("hdr_expr") or "").strip()
+    if not expr:
         return {"items": []}
 
-    expr = res.get("hdr_expr").strip()
     if not expr.lower().startswith("select"):
         expr = f"SELECT * FROM {expr}"
 
@@ -43,36 +48,3 @@ def get_picker_rows(
         return {"items": items[:pageSize]}
     except Exception:
         return {"items": []}
-
-@router.get("/v1/forms/{code}/fields/{name}/options")
-def get_field_options(
-    code: str,
-    name: str,
-    db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
-):
-    # Retrieve field definition for combobox or comboquery
-    sql = """
-    SELECT d.col_uitype, d.col_controlexpr 
-    FROM [System].[Form.Details] d
-    JOIN [System].[Form.Headers] h ON h.hdr_id = d.hdr_id
-    WHERE h.hdr_code = :code AND d.col_name = :name
-    """
-    res = db.execute(text(sql), {"code": code, "name": name}).mappings().first()
-    if not res:
-        return {"options": []}
-    
-    uitype = res.get("col_uitype")
-    expr = res.get("col_controlexpr")
-    
-    if uitype == "combobox":
-        # parse options
-        return {"options": []}
-    elif uitype in ("comboquery", "xcomboquery") and expr:
-        try:
-            rows = db.connection().exec_driver_sql(expr).mappings().all()
-            return {"options": [dict(r) for r in rows]}
-        except Exception:
-            return {"options": []}
-            
-    return {"options": []}

@@ -9,7 +9,7 @@ Conventions:
 - Dates are ISO strings: `2026-10-21` for date, `2026-10-21T14:05:00` for datetime. Decimals are JSON numbers (rounded to the column scale).
 - Every endpoint except login needs `Authorization: Bearer <accessToken>`.
 - Every response carries `X-Request-Id`.
-- Lists use **keyset (cursor) paging** (`app/core/pagination.py`). Request `pageSize` and `cursor`; response `{ "items": [...], "pageSize": 50, "hasMore": true, "nextCursor": "..." }`. Browser rows are ordered by the date column and row key, descending, unless a validated `sort` is given. `total` is included only when cheap.
+- Lists use **keyset (cursor) paging** (`app/core/pagination.py`, `docs/11`). Request `pageSize`, `cursor`, `q`, `sort`, and filters; response `{ "items": [...], "pageSize": 50, "hasMore": true, "nextCursor": "..." }`. Browser rows are ordered by the date column and row key descending, unless a validated `sort` is given. `total` is included only when `?includeTotal=true`.
 
 ## Endpoints
 
@@ -20,20 +20,20 @@ Conventions:
 | `POST /v1/auth/logout` | Invalidate the session |
 | `GET /v1/me` | Current user and roles |
 | `GET /v1/menu` | Navigation the user may see |
-| `GET /v1/meta/browser/{code}` | Browser config |
-| `GET /v1/meta/form/{code}` | Form config including embedded grids |
-| `GET /v1/meta/grid/{code}` | Grid config (standalone grids) |
-| `GET /v1/meta/picker/{code}` | Picker columns |
-| `GET /v1/browsers/{code}/rows` | Browser rows (query: filters, `cursor`, `pageSize`, `q`, `sort`) |
-| `GET /v1/forms/{code}/new` | Blank record with resolved defaults |
-| `GET /v1/forms/{code}/{id}` | One record with its grids' rows |
-| `POST /v1/forms/{code}` | Create |
-| `PUT /v1/forms/{code}/{id}` | Update |
-| `DELETE /v1/forms/{code}/{id}` | Delete (disabled until the behavior is verified; returns 501) |
-| `GET /v1/grids/{code}/rows` | Standalone grid rows (`parentId` or filters) |
-| `GET /v1/pickers/{code}/rows` | Picker search (`q`, `page`, `pageSize`, plus context values) |
-| `GET /v1/forms/{code}/fields/{name}/options` | Options for combobox, comboquery or xcomboquery |
-| `POST /v1/commands/{cmdId}/run` | Run a toolbar command |
+| `GET /v1/meta/browser/{hdrId}` | Browser config |
+| `GET /v1/meta/form/{hdrId}` | Form config including embedded grids |
+| `GET /v1/meta/grid/{hdrId}` | Grid config (standalone grids) |
+| `GET /v1/meta/picker/{hdrId}` | Picker columns |
+| `GET /v1/browsers/{hdrId}/rows` | Browser rows (query: filters, `cursor`, `pageSize`, `q`, `sort`) |
+| `GET /v1/forms/{hdrId}/new` | Blank record with resolved defaults |
+| `GET /v1/forms/{hdrId}/records/{recordId}` | One record with its grids' rows |
+| `POST /v1/forms/{hdrId}/records` | Create |
+| `PUT /v1/forms/{hdrId}/records/{recordId}` | Update |
+| `DELETE /v1/forms/{hdrId}/records/{recordId}` | Delete (disabled until the behavior is verified; returns 501) |
+| `GET /v1/grids/{hdrId}/rows` | Standalone grid rows (`parentId` or filters) |
+| `GET /v1/pickers/{hdrId}/rows` | Picker search (`q`, `page`, `pageSize`, plus context values) |
+| `GET /v1/forms/{hdrId}/fields/{name}/options` | Options for combobox, comboquery or xcomboquery |
+| `POST /v1/screens/{hdrId}/commands/{cmdId}/run` | Run a toolbar command |
 | `GET /v1/admin/lint` | Config linter report (admin role) |
 | `POST /v1/admin/cache/refresh` | Drop cached config (admin role) |
 | `GET /health`, `GET /health/db` | Liveness and database check (no auth, outside `/v1`) |
@@ -235,6 +235,7 @@ Only the allowed variables are read from `values` (matched by name); `_`-prefixe
 | 401 | `unauthorized` | Missing, expired or invalid token |
 | 403 | `forbidden` | Role not allowed |
 | 404 | `not_found` | Unknown screen code or record |
+| 404 | `wrong_screen_type` | Screen id has wrong type for endpoint |
 | 409 | `schema_stale` | Config changed since the app loaded it |
 | 409 | `conflict` | Data conflict (for example a database rule rejected the save) |
 | 422 | `validation_failed` | Payload failed validation |

@@ -1,12 +1,21 @@
 import hashlib
 import json
+import time
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 from app.modules.meta.repository import MetaRepository
 from app.shared.types import normalize_type
 from app.shared.roles import allowed
+from app.core.config import settings
 
 repo = MetaRepository()
+
+_screen_cache: Dict[str, tuple[float, List[Dict[str, Any]]]] = {}
+_single_screen_cache: Dict[int, tuple[float, Dict[str, Any]]] = {}
+
+def clear_meta_cache():
+    _screen_cache.clear()
+    _single_screen_cache.clear()
 
 def _compute_schema_version(header: dict, children: list) -> str:
     canonical = {
@@ -88,13 +97,56 @@ def compute_browser_layout(columns: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 class MetaService:
-    def get_browser_meta(self, db: Session, code: str, user_roles: List[str]) -> Dict[str, Any]:
-        header = repo.get_header_by_code(db, code)
-        if not header or header.get("hdr_type") != "BROWSER":
-            from app.core.errors import AppError
-            raise AppError(status_code=404, code="not_found", message=f"Browser not found: {code}")
+    def get_screen(self, db: Session, hdr_id: int) -> Dict[str, Any]:
+        now = time.time()
+        if hdr_id in _single_screen_cache:
+            cached_time, screen = _single_screen_cache[hdr_id]
+            if now - cached_time < settings.CONFIG_CACHE_TTL_SEC:
+                return screen
 
-        hdr_id = header.get("hdr_id")
+        screen = repo.get_screen_by_id(db, hdr_id)
+        if not screen:
+            from app.core.errors import AppError
+            raise AppError(status_code=404, code="not_found", message=f"Screen not found: {hdr_id}")
+
+        _single_screen_cache[hdr_id] = (now, screen)
+        return screen
+
+    def list_screens(self, db: Session, types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        now = time.time()
+        cache_key = "all"
+        if cache_key in _screen_cache:
+            cached_time, screens = _screen_cache[cache_key]
+            if now - cached_time < settings.CONFIG_CACHE_TTL_SEC:
+                res = screens
+            else:
+                res = repo.list_screens(db)
+                _screen_cache[cache_key] = (now, res)
+        else:
+            res = repo.list_screens(db)
+            _screen_cache[cache_key] = (now, res)
+
+        if types:
+            types_upper = {t.upper() for t in types}
+            res = [s for s in res if (s.get("hdr_type") or "").upper() in types_upper]
+        return res
+
+    def resolve_hdr_id(self, db: Session, code: Optional[str]) -> Optional[int]:
+        if not code:
+            return None
+        screens = self.list_screens(db)
+        c_lower = code.strip().lower()
+        for s in screens:
+            if (s.get("hdr_code") or "").strip().lower() == c_lower:
+                return s.get("hdr_id")
+        return None
+
+    def get_browser_meta(self, db: Session, hdr_id: int, user_roles: List[str]) -> Dict[str, Any]:
+        header = self.get_screen(db, hdr_id)
+        if (header.get("hdr_type") or "").upper() != "BROWSER":
+            from app.core.errors import AppError
+            raise AppError(status_code=404, code="wrong_screen_type", message=f"Expected BROWSER, got {header.get('hdr_type')}")
+
         columns = repo.get_browser_columns(db, hdr_id)
         if not columns and header.get("hdr_expr"):
             columns = repo.infer_columns_from_query(db, header.get("hdr_expr"))
@@ -131,12 +183,11 @@ class MetaService:
                     "name": v.get("var_name"),
                     "label": v.get("var_remark") or v.get("var_name"),
                     "type": normalize_type(v.get("var_datatype") or "text"),
-                    "default": v.get("var_aggr"), # default expr
+                    "default": v.get("var_aggr"),
                     "required": not bool(v.get("var_nullable", True)),
                     "hidden": bool(v.get("var_hide")),
                 })
 
-        # Check permissions
         can_add = allowed(header.get("doc_header"), user_roles) and bool(header.get("dtl_code"))
         can_remove = False
 
@@ -152,13 +203,18 @@ class MetaService:
                     "order": cmd.get("cmd_order"),
                 })
 
+        dtl_code = header.get("dtl_code")
+        detail_hdr_id = self.resolve_hdr_id(db, dtl_code) if dtl_code else None
+
         return {
+            "hdrId": header.get("hdr_id"),
             "code": header.get("hdr_code"),
             "caption": header.get("hdr_cap") or "",
             "schemaVersion": schema_version,
             "rowKey": row_key,
             "dateColumn": date_col,
-            "detailCode": header.get("dtl_code"),
+            "detailCode": dtl_code,
+            "detailHdrId": detail_hdr_id,
             "canAdd": can_add,
             "canRemove": can_remove,
             "style": header.get("param1") or "Fit",
@@ -168,13 +224,78 @@ class MetaService:
             "commands": allowed_commands,
         }
 
-    def get_form_meta(self, db: Session, code: str, user_roles: List[str]) -> Dict[str, Any]:
-        header = repo.get_header_by_code(db, code)
-        if not header or header.get("hdr_type") != "DETAIL":
+    def get_grid_meta(self, db: Session, hdr_id: int, user_roles: List[str]) -> Dict[str, Any]:
+        header = self.get_screen(db, hdr_id)
+        if (header.get("hdr_type") or "").upper() != "GRID":
             from app.core.errors import AppError
-            raise AppError(status_code=404, code="not_found", message=f"Form not found: {code}")
+            raise AppError(status_code=404, code="wrong_screen_type", message=f"Expected GRID, got {header.get('hdr_type')}")
 
-        hdr_id = header.get("hdr_id")
+        columns = repo.get_grid_columns(db, hdr_id)
+        if not columns and header.get("hdr_expr"):
+            columns = repo.infer_columns_from_query(db, header.get("hdr_expr"))
+
+        row_key = "id"
+        for c in columns:
+            if c.get("col_key") == 1:
+                row_key = c.get("col_name")
+
+        formatted_columns = []
+        for c in columns:
+            picker_code = c.get("col_controlexpr") if c.get("col_uitype") == "picker" else None
+            picker_hdr_id = self.resolve_hdr_id(db, picker_code) if picker_code else None
+            col_meta = {
+                "name": c.get("col_name"),
+                "caption": c.get("col_cap") or c.get("col_name", "").replace("_", " ").title(),
+                "type": normalize_type(c.get("col_type")),
+                "hidden": bool(c.get("col_hide")),
+                "scale": int(c.get("col_scale") or 0),
+                "width": int(c.get("col_width") or 100),
+            }
+            if picker_code:
+                col_meta["pickerCode"] = picker_code
+                col_meta["pickerHdrId"] = picker_hdr_id
+            formatted_columns.append(col_meta)
+
+        return {
+            "hdrId": header.get("hdr_id"),
+            "code": header.get("hdr_code"),
+            "caption": header.get("hdr_cap") or "",
+            "rowKey": row_key,
+            "columns": formatted_columns,
+        }
+
+    def get_picker_meta(self, db: Session, hdr_id: int, user_roles: List[str]) -> Dict[str, Any]:
+        header = self.get_screen(db, hdr_id)
+        if (header.get("hdr_type") or "").upper() != "PICKER":
+            from app.core.errors import AppError
+            raise AppError(status_code=404, code="wrong_screen_type", message=f"Expected PICKER, got {header.get('hdr_type')}")
+
+        columns = repo.get_browser_columns(db, hdr_id)
+        if not columns and header.get("hdr_expr"):
+            columns = repo.infer_columns_from_query(db, header.get("hdr_expr"))
+
+        formatted_columns = []
+        for c in columns:
+            formatted_columns.append({
+                "name": c.get("col_name"),
+                "caption": c.get("col_cap") or c.get("col_name", "").replace("_", " ").title(),
+                "type": normalize_type(c.get("col_type")),
+                "hidden": bool(c.get("col_hide")),
+            })
+
+        return {
+            "hdrId": header.get("hdr_id"),
+            "code": header.get("hdr_code"),
+            "caption": header.get("hdr_cap") or "",
+            "columns": formatted_columns,
+        }
+
+    def get_form_meta(self, db: Session, hdr_id: int, user_roles: List[str]) -> Dict[str, Any]:
+        header = self.get_screen(db, hdr_id)
+        if (header.get("hdr_type") or "").upper() != "DETAIL":
+            from app.core.errors import AppError
+            raise AppError(status_code=404, code="wrong_screen_type", message=f"Expected DETAIL, got {header.get('hdr_type')}")
+
         details = repo.get_form_details(db, hdr_id)
         variables = repo.get_variables(db, hdr_id)
         commands = repo.get_commands(db, hdr_id)
@@ -192,6 +313,8 @@ class MetaService:
                     title_fields.append(d.get("col_name"))
 
         tabs_map: Dict[str, List[Any]] = {}
+        grids_map: Dict[str, Any] = {}
+
         for d in details:
             tab = d.get("tab_name") or "General"
             if tab not in tabs_map:
@@ -209,18 +332,25 @@ class MetaService:
                 "inlineWithPrevious": d.get("col_offset") == -1,
             }
             if uitype == "picker":
-                field_meta["pickerCode"] = d.get("col_controlexpr")
+                picker_code = d.get("col_controlexpr")
+                picker_hdr_id = self.resolve_hdr_id(db, picker_code)
+                field_meta["pickerCode"] = picker_code
+                field_meta["pickerHdrId"] = picker_hdr_id
             elif uitype in ("grid",):
-                field_meta["gridCode"] = d.get("col_controlexpr")
+                grid_code = d.get("col_controlexpr")
+                grid_hdr_id = self.resolve_hdr_id(db, grid_code)
+                field_meta["gridCode"] = grid_code
+                field_meta["gridHdrId"] = grid_hdr_id
                 field_meta["saveWithForm"] = bool(d.get("col_update"))
+                if grid_hdr_id:
+                    try:
+                        grids_map[str(grid_hdr_id)] = self.get_grid_meta(db, grid_hdr_id, user_roles)
+                    except Exception:
+                        pass
             elif uitype == "formula":
                 field_meta["expression"] = d.get("col_controlexpr")
             elif uitype == "combobox":
-                # parse [1,'Label']
-                opts = []
-                expr = d.get("col_controlexpr") or ""
-                # simple parsing or regex
-                field_meta["options"] = opts
+                field_meta["options"] = []
 
             tabs_map[tab].append(field_meta)
 
@@ -239,6 +369,7 @@ class MetaService:
                 })
 
         return {
+            "hdrId": header.get("hdr_id"),
             "code": header.get("hdr_code"),
             "caption": header.get("hdr_cap") or "",
             "schemaVersion": schema_version,
@@ -249,7 +380,7 @@ class MetaService:
             "journalView": bool(header.get("dtl_journal")),
             "tabs": tabs,
             "variables": [{"name": v.get("var_name"), "from": v.get("var_controlexpr")} for v in variables],
-            "grids": {},
+            "grids": grids_map,
             "defaults": {},
             "commands": allowed_commands,
         }

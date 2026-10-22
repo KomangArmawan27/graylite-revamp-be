@@ -9,6 +9,30 @@ class MetaRepository:
         res = db.execute(text(sql), {"code": code}).mappings().first()
         return dict(res) if res else None
 
+    def get_screen_by_id(self, db: Session, hdr_id: int) -> Optional[Dict[str, Any]]:
+        sql = """
+        SELECT h.hdr_id, LTRIM(RTRIM(h.hdr_code)) AS hdr_code, LTRIM(RTRIM(h.hdr_cap)) AS hdr_cap,
+               h.hdr_type, h.hdr_level, h.dtl_code, h.hdr_basetable, h.hdr_expr
+        FROM [System].[Form.Headers] h
+        WHERE h.hdr_id = :hdr_id
+        """
+        res = db.execute(text(sql), {"hdr_id": hdr_id}).mappings().first()
+        return dict(res) if res else None
+
+    def list_screens(self, db: Session) -> List[Dict[str, Any]]:
+        sql = """
+        SELECT h.hdr_id, LTRIM(RTRIM(h.hdr_code)) AS hdr_code, LTRIM(RTRIM(h.hdr_cap)) AS hdr_cap,
+               h.hdr_type, h.hdr_level,
+               CASE WHEN LEN(LTRIM(RTRIM(ISNULL(h.hdr_expr, '')))) > 0 THEN 1 ELSE 0 END AS has_expr,
+               d.hdr_id AS detail_hdr_id,
+               h.dtl_code
+        FROM [System].[Form.Headers] h
+        LEFT JOIN [System].[Form.Headers] d
+               ON LTRIM(RTRIM(d.hdr_code)) = LTRIM(RTRIM(h.dtl_code))
+        """
+        rows = db.execute(text(sql)).mappings().all()
+        return [dict(r) for r in rows]
+
     def get_browser_columns(self, db: Session, hdr_id: int) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM [System].[Form.Browsers] WHERE hdr_id = :hdr_id ORDER BY col_order"
         rows = db.execute(text(sql), {"hdr_id": hdr_id}).mappings().all()

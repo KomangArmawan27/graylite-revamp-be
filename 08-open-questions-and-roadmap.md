@@ -15,7 +15,7 @@ Use the **default** until the question is answered, and mark the code with `# TO
 | Q7 | Is `_CCID` (user cost center) used to scope data in queries beyond the explicit `::_CCID::` uses (about 27 expressions)? | Row scoping | Bind `_CCID` from the user; add no extra filtering |
 | Q8 | How does Take Order set `trans_price` from the price tier (a command like "Refresh Price", a callback, a trigger)? | Pilot form | Leave `trans_price` to the client and the database |
 | Q9 | What do `MULTIDISC` and `VATPERCENT` compute exactly? | Formulas | Skip those formulas and log |
-| Q10 | Menu source: `Tree.Menu` rows (`object_id`, `object_parent`, `object_command`) and how MODULE rows relate | Menu | Build the menu from Tree rows and Visible roles; hide MODULE entries |
+| Q10 | Menu source: `Tree.Menu` vs `Form.Headers` | Menu | Resolved: derived from `Form.Headers` (`hdr_type = 'BROWSER'`, filtered by exclusion patterns, roles, module/group from code segments) |
 | Q11 | What do `Security Override` and `System.[Flow.Security]` hold (probably per-flow permissions)? | Flow rules | Not enforced; note it as a gap |
 | Q12 | One database or several (customers, environments)? Same config tables in each? | Deployment | One database from `.env` |
 | Q13 | Should the server recompute saved formula totals, or trust the client? | Save validation | Trust the client, validate type and range |
@@ -46,7 +46,7 @@ Each phase ends with a milestone that can be demonstrated.
 
 - `GET /v1/meta/browser/{code}` with filters from variables (fallback: placeholder scan), column fallback from result metadata, `canAdd`/`canRemove`, layout hints.
 - `GET /v1/browsers/{code}/rows` with param binding, paging, row cap and timeout.
-- Menu endpoint from the Tree rows (Q10).
+- Menu endpoint from `Form.Headers` (Q10).
 - **Milestone:** the Take Order list returns the same rows as the old app for the same dates and user.
 
 ### Phase 3: Forms and grids
