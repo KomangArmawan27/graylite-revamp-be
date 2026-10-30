@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.modules.meta.repository import MetaRepository
 from app.shared.types import normalize_type
 from app.shared.roles import allowed
+from app.shared.expr.evaluator import evaluate_expression
 from app.core.config import settings
 
 repo = MetaRepository()
@@ -290,7 +291,7 @@ class MetaService:
             "columns": formatted_columns,
         }
 
-    def get_form_meta(self, db: Session, hdr_id: int, user_roles: List[str]) -> Dict[str, Any]:
+    def get_form_meta(self, db: Session, hdr_id: int, user_roles: List[str], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         header = self.get_screen(db, hdr_id)
         if (header.get("hdr_type") or "").upper() != "DETAIL":
             from app.core.errors import AppError
@@ -305,12 +306,30 @@ class MetaService:
 
         id_field = "id"
         title_fields = []
+        defaults = {}
+        context = {
+            "_USERID": user.get("id") if user else 1,
+            "_USERLOGIN": user.get("login") if user else "system",
+            "_CCID": user.get("ccId") if user else 1,
+            "_USERLEVEL": ",".join(user_roles),
+        }
+
         for d in details:
             if d.get("col_PK") == 1:
                 id_field = d.get("col_name")
             if d.get("col_PK") in (4, 5):
                 if d.get("col_name"):
                     title_fields.append(d.get("col_name"))
+            
+            col_name = d.get("col_name")
+            default_expr = d.get("col_defaultvalue")
+            if col_name and default_expr:
+                try:
+                    val = evaluate_expression(str(default_expr).strip(), context)
+                    if val is not None:
+                        defaults[col_name] = val
+                except Exception:
+                    pass
 
         tabs_map: Dict[str, List[Any]] = {}
         grids_map: Dict[str, Any] = {}
@@ -381,6 +400,6 @@ class MetaService:
             "tabs": tabs,
             "variables": [{"name": v.get("var_name"), "from": v.get("var_controlexpr")} for v in variables],
             "grids": grids_map,
-            "defaults": {},
+            "defaults": defaults,
             "commands": allowed_commands,
         }

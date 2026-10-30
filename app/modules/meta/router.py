@@ -13,7 +13,7 @@ def get_browser_meta(hdrId: int, db: Session = Depends(get_db), user: dict = Dep
 
 @router.get("/form/{hdrId}")
 def get_form_meta(hdrId: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    return service.get_form_meta(db, hdrId, user.get("roles", []))
+    return service.get_form_meta(db, hdrId, user.get("roles", []), user=user)
 
 @router.get("/grid/{hdrId}")
 def get_grid_meta(hdrId: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):

@@ -13,7 +13,7 @@ meta_service = MetaService()
 
 @router.get("/{hdrId}/new")
 def get_new_form(hdrId: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []))
+    meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []), user=user)
     return {
         "header": meta.get("defaults", {}),
         "grids": {},
@@ -22,7 +22,7 @@ def get_new_form(hdrId: int, db: Session = Depends(get_db), user: dict = Depends
 
 @router.get("/{hdrId}/records/{recordId}")
 def get_form_record(hdrId: int, recordId: Any, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []))
+    meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []), user=user)
     header = meta_service.get_screen(db, hdrId)
     base_table = header.get("hdr_basetable") or header.get("hdr_expr")
     if not base_table:
@@ -64,7 +64,7 @@ def get_form_record(hdrId: int, recordId: Any, db: Session = Depends(get_db), us
 def create_form_record(hdrId: int, payload: dict, db: Session = Depends(get_db_write), user: dict = Depends(get_current_user)):
     if not settings.ENABLE_WRITES:
         raise AppError(status_code=403, code="forbidden", message="Writes are disabled")
-    meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []))
+    meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []), user=user)
     
     if payload.get("schemaVersion") != meta.get("schemaVersion"):
         raise AppError(status_code=409, code="schema_stale", message="Form configuration has changed. Please reload.")
@@ -84,11 +84,9 @@ def create_form_record(hdrId: int, payload: dict, db: Session = Depends(get_db_w
     pk_field = meta.get("idField", "id")
 
     insert_sql = f"""
-    DECLARE @o TABLE (id BIGINT);
     INSERT INTO {base_table} ({col_names_sql})
-    OUTPUT INSERTED.[{pk_field}] INTO @o
-    VALUES ({placeholders_sql});
-    SELECT id FROM @o;
+    OUTPUT INSERTED.[{pk_field}]
+    VALUES ({placeholders_sql})
     """
     try:
         row = db.execute(text(insert_sql), header_data).first()
@@ -103,7 +101,7 @@ def create_form_record(hdrId: int, payload: dict, db: Session = Depends(get_db_w
 def update_form_record(hdrId: int, recordId: Any, payload: dict, db: Session = Depends(get_db_write), user: dict = Depends(get_current_user)):
     if not settings.ENABLE_WRITES:
         raise AppError(status_code=403, code="forbidden", message="Writes are disabled")
-    meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []))
+    meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []), user=user)
     
     if payload.get("schemaVersion") != meta.get("schemaVersion"):
         raise AppError(status_code=409, code="schema_stale", message="Form configuration has changed.")
@@ -154,7 +152,7 @@ def get_field_options(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []))
+    meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []), user=user)
     sql = """
     SELECT d.col_uitype, d.col_controlexpr 
     FROM [System].[Form.Details] d
