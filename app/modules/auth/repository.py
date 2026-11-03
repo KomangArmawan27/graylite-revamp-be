@@ -1,9 +1,11 @@
-from typing import Any, Dict, Optional
-from sqlalchemy.orm import Session
+from typing import Any
+
 from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 
 class AuthRepository:
-    def get_user_by_login(self, db: Session, login: str) -> Optional[Dict[str, Any]]:
+    def get_user_by_login(self, db: Session, login: str) -> dict[str, Any] | None:
         sql = "SELECT * FROM [System].[User.Management] WHERE LOWER(user_login) = LOWER(:login)"
         res = db.execute(text(sql), {"login": login}).mappings().first()
         return dict(res) if res else None

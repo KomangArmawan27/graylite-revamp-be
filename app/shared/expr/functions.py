@@ -1,6 +1,7 @@
-from datetime import date, timedelta
-from typing import Any, Optional
 import math
+from datetime import date, datetime, timedelta
+from typing import Any
+
 
 def TODAY() -> date:
     return date.today()
@@ -35,6 +36,9 @@ def EDOM(d: Any) -> date:
     else:
         next_month = date(d.year, d.month + 1, 1)
     return next_month - timedelta(days=1)
+
+def NOW() -> datetime:
+    return datetime.now()
 
 def YEAR(d: Any) -> int:
     if isinstance(d, str):
@@ -73,6 +77,7 @@ MATH_FUNCS = {
 
 HELPER_FUNCS = {
     "today": TODAY,
+    "now": NOW,
     "dateadd": DATEADD,
     "fdom": FDOM,
     "edom": EDOM,

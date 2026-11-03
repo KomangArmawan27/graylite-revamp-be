@@ -1,8 +1,9 @@
 import base64
 import hashlib
 import json
-from typing import Any, Generic, Optional, TypeVar
-from pydantic import BaseModel, Field
+from typing import Any, Generic, TypeVar
+
+from pydantic import BaseModel
 
 T = TypeVar("T")
 
@@ -23,16 +24,16 @@ class Page(BaseModel, Generic[T]):
     items: list[T]
     pageSize: int
     hasMore: bool
-    nextCursor: Optional[str] = None
-    total: Optional[int] = None
+    nextCursor: str | None = None
+    total: int | None = None
 
 
 def make_fingerprint(
     hdr_id: int | str,
     sort: list[tuple[str, str]],
-    filters: Optional[dict[str, Any]] = None,
-    q: Optional[str] = None,
-    schema_version: Optional[str | int] = None,
+    filters: dict[str, Any] | None = None,
+    q: str | None = None,
+    schema_version: str | int | None = None,
 ) -> str:
     payload = {
         "hdr": str(hdr_id),
@@ -53,7 +54,7 @@ def encode_cursor(values: dict[str, Any]) -> str:
     return encoded
 
 
-def decode_cursor(cursor: Optional[str]) -> Optional[dict[str, Any]]:
+def decode_cursor(cursor: str | None) -> dict[str, Any] | None:
     if not cursor:
         return None
     try:
@@ -70,9 +71,9 @@ def decode_cursor(cursor: Optional[str]) -> Optional[dict[str, Any]]:
 
 def resolve_sort(
     known_columns: set[str],
-    sort_param: Optional[str],
+    sort_param: str | None,
     default_order: list[tuple[str, str]],
-    row_key: Optional[str],
+    row_key: str | None,
 ) -> list[tuple[str, str]]:
     """
     Resolves sort parameter into a list of (column_name, direction) tuples.

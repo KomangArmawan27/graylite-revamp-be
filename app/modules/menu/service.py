@@ -1,6 +1,8 @@
 import re
-from typing import Any, Dict, List
+from typing import Any
+
 from sqlalchemy.orm import Session
+
 from app.modules.meta.service import MetaService
 from app.shared.roles import allowed
 
@@ -16,7 +18,7 @@ def should_exclude(code: str) -> bool:
     trimmed = code.strip()
     return any(pattern(trimmed) for pattern in EXCLUDE_PATTERNS)
 
-def get_menu_items(db: Session, user_roles: List[str]) -> Dict[str, Any]:
+def get_menu_items(db: Session, user_roles: list[str]) -> dict[str, Any]:
     screens = meta_service.list_screens(db, types=["BROWSER"])
     items = []
     

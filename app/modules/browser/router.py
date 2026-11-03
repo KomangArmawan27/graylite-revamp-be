@@ -1,27 +1,27 @@
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
-from typing import Optional, Any
+
 from app.core.db import get_db
 from app.core.deps import get_current_user
-from app.shared.params import bind
-from app.modules.meta.service import MetaService
-from app.core.config import settings
+from app.core.errors import (
+    InvalidCursor,
+    InvalidFilter,
+    ValidationFailed,
+)
 from app.core.pagination import (
     BROWSER_DEFAULT_SIZE,
     BROWSER_MAX_SIZE,
-    resolve_sort,
     build_keyset_predicate,
+    decode_cursor,
     escape_like_string,
     finish_page,
     make_fingerprint,
-    decode_cursor,
+    resolve_sort,
 )
-from app.core.errors import (
-    ValidationFailed,
-    InvalidCursor,
-    InvalidFilter,
-    ResultTooLarge,
-)
+from app.modules.meta.service import MetaService
+from app.shared.params import bind
+from app.shared.types import serialize_row
 
 router = APIRouter(prefix="/browsers", tags=["browsers"])
 meta_service = MetaService()
@@ -31,10 +31,11 @@ meta_service = MetaService()
 def get_browser_rows(
     hdrId: int,
     request: Request,
-    pageSize: Optional[int] = None,
-    cursor: Optional[str] = None,
-    q: Optional[str] = None,
-    sort: Optional[str] = None,
+    pageSize: int | None = None,
+    cursor: str | None = None,
+    q: str | None = None,
+    sort: str | None = None,
+    includeTotal: bool | None = None,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -47,25 +48,25 @@ def get_browser_rows(
     header = meta_service.get_screen(db, hdrId)
     expr = (header.get("hdr_expr") or "").strip()
     if not expr:
-        return {
+        res = {
             "items": [],
             "pageSize": BROWSER_DEFAULT_SIZE,
             "hasMore": False,
             "nextCursor": None,
         }
+        if includeTotal:
+            res["total"] = 0
+        return res
 
     if not expr.lower().startswith("select"):
         expr = f"SELECT * FROM {expr}"
 
-    # Validate pageSize
     if pageSize is None:
         pageSize = BROWSER_DEFAULT_SIZE
     if pageSize < 1:
         raise ValidationFailed("pageSize must be at least 1", [{"field": "pageSize", "code": "out_of_range", "problem": "must be >= 1"}])
-    if pageSize > BROWSER_MAX_SIZE:
-        pageSize = BROWSER_MAX_SIZE
+    pageSize = min(pageSize, BROWSER_MAX_SIZE)
 
-    # Validate q length
     if q and len(q) > 100:
         raise ValidationFailed("Search query 'q' exceeds 100 characters", [{"field": "q", "code": "too_long", "problem": "max length 100"}])
 
@@ -75,7 +76,6 @@ def get_browser_rows(
     columns_meta = browser_meta.get("columns", [])
     known_columns = {c["name"].lower() for c in columns_meta if c.get("name")}
 
-    # Default order
     default_order = []
     if date_col and date_col.lower() in known_columns:
         default_order.append((date_col, "desc"))
@@ -90,7 +90,6 @@ def get_browser_rows(
 
     resolved_sort = resolve_sort(known_columns, sort, default_order, row_key)
 
-    # Extract filter params
     query_params = dict(request.query_params)
     filter_values = {}
     param_values = {
@@ -116,16 +115,14 @@ def get_browser_rows(
         elif fname_lower in required_filters:
             raise InvalidFilter(f"Required filter '{fname}' is missing", [{"field": fname, "code": "required", "problem": "Required filter missing"}])
 
-    # Also include any extra query params not starting with _
     for k, v in query_params.items():
-        if not k.startswith("_") and k not in ("pageSize", "cursor", "q", "sort"):
+        if not k.startswith("_") and k not in ("pageSize", "cursor", "q", "sort", "includeTotal"):
             if k not in filter_values:
                 filter_values[k] = v
                 param_values[k] = v
 
     fingerprint = make_fingerprint(hdrId, resolved_sort, filter_values, q, schema_version)
 
-    # Decode cursor if present
     cursor_data = decode_cursor(cursor)
     if cursor_data:
         if cursor_data.get("fp") != fingerprint:
@@ -136,7 +133,6 @@ def get_browser_rows(
 
     bound_sql, bound_params = bind(expr, param_values)
 
-    # Build predicates for outer query wrapping derived table x
     where_clauses = []
     outer_params = list(bound_params)
 
@@ -147,7 +143,6 @@ def get_browser_rows(
             outer_params.extend(keyset_params)
 
     if q:
-        # Apply q across visible text columns (at most 8)
         visible_text_cols = [
             c["name"] for c in columns_meta
             if not c.get("hidden") and c.get("type") == "text" and c.get("name")
@@ -176,6 +171,16 @@ def get_browser_rows(
     """
 
     rows_result = db.connection().exec_driver_sql(query_sql, tuple(outer_params)).mappings().all()
-    items = [dict(r) for r in rows_result]
+    items = [serialize_row(dict(r)) for r in rows_result]
 
-    return finish_page(items, pageSize, resolved_sort, hdrId, fingerprint)
+    page = finish_page(items, pageSize, resolved_sort, hdrId, fingerprint)
+    res_dict = page.model_dump()
+    if includeTotal:
+        # Compute total count if requested
+        count_sql = f"SELECT COUNT(*) FROM ({bound_sql}) AS x {where_sql}"
+        total_count = db.connection().exec_driver_sql(count_sql, tuple(outer_params)).scalar()
+        res_dict["total"] = total_count
+    else:
+        res_dict.pop("total", None)
+
+    return res_dict

@@ -1,16 +1,23 @@
 import uuid
-from typing import Any, Dict
-from sqlalchemy.orm import Session
+from typing import Any
+
 from sqlalchemy import text
-from app.core.errors import AppError
-from app.core.security import verify_password, create_access_token, create_refresh_token, verify_token
-from app.modules.auth.repository import AuthRepository
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
+from app.core.errors import AppError
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    verify_password,
+    verify_token,
+)
+from app.modules.auth.repository import AuthRepository
 
 repo = AuthRepository()
 
 class AuthService:
-    def login(self, db: Session, login_req: Any) -> Dict[str, Any]:
+    def login(self, db: Session, login_req: Any) -> dict[str, Any]:
         user = repo.get_user_by_login(db, login_req.login)
         if not user or not user.get("is_active", True):
             raise AppError(status_code=401, code="unauthorized", message="Invalid login or password")
@@ -53,7 +60,7 @@ class AuthService:
             }
         }
 
-    def refresh(self, db: Session, refresh_token: str) -> Dict[str, Any]:
+    def refresh(self, db: Session, refresh_token: str) -> dict[str, Any]:
         payload = verify_token(refresh_token)
         user_id = payload.get("sub")
         

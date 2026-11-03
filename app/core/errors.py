@@ -1,8 +1,9 @@
 import re
-from typing import Any, Optional
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError
 
 
@@ -12,7 +13,7 @@ class AppError(Exception):
         status_code: int,
         code: str,
         message: str,
-        details: Optional[list[dict[str, Any]]] = None,
+        details: list[dict[str, Any]] | None = None,
     ):
         self.status_code = status_code
         self.code = code
@@ -22,87 +23,87 @@ class AppError(Exception):
 
 
 class BadRequest(AppError):
-    def __init__(self, message: str = "Bad request", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Bad request", details: list[dict[str, Any]] | None = None):
         super().__init__(400, "bad_request", message, details)
 
 
 class InvalidCursor(AppError):
-    def __init__(self, message: str = "Invalid cursor", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Invalid cursor", details: list[dict[str, Any]] | None = None):
         super().__init__(400, "invalid_cursor", message, details)
 
 
 class Forbidden(AppError):
-    def __init__(self, message: str = "Forbidden", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Forbidden", details: list[dict[str, Any]] | None = None):
         super().__init__(403, "forbidden", message, details)
 
 
 class NotFound(AppError):
-    def __init__(self, message: str = "Not found", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Not found", details: list[dict[str, Any]] | None = None):
         super().__init__(404, "not_found", message, details)
 
 
 class WrongScreenType(AppError):
-    def __init__(self, message: str = "Wrong screen type", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Wrong screen type", details: list[dict[str, Any]] | None = None):
         super().__init__(404, "wrong_screen_type", message, details)
 
 
 class SchemaStale(AppError):
-    def __init__(self, message: str = "Schema is stale", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Schema is stale", details: list[dict[str, Any]] | None = None):
         super().__init__(409, "schema_stale", message, details)
 
 
 class Conflict(AppError):
-    def __init__(self, message: str = "Conflict error", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Conflict error", details: list[dict[str, Any]] | None = None):
         super().__init__(409, "conflict", message, details)
 
 
 class ValidationFailed(AppError):
-    def __init__(self, message: str = "Validation failed", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Validation failed", details: list[dict[str, Any]] | None = None):
         super().__init__(422, "validation_failed", message, details)
 
 
 class InvalidSort(AppError):
-    def __init__(self, message: str = "Invalid sort column", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Invalid sort column", details: list[dict[str, Any]] | None = None):
         super().__init__(422, "invalid_sort", message, details)
 
 
 class InvalidFilter(AppError):
-    def __init__(self, message: str = "Invalid filter", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Invalid filter", details: list[dict[str, Any]] | None = None):
         super().__init__(422, "invalid_filter", message, details)
 
 
 class ResultTooLarge(AppError):
-    def __init__(self, message: str = "Result too large", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Result too large", details: list[dict[str, Any]] | None = None):
         super().__init__(422, "result_too_large", message, details)
 
 
 class RuleViolation(AppError):
-    def __init__(self, message: str = "Rule violation", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Rule violation", details: list[dict[str, Any]] | None = None):
         super().__init__(422, "rule_violation", message, details)
 
 
 class ConfigError(AppError):
-    def __init__(self, message: str = "Configuration error", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Configuration error", details: list[dict[str, Any]] | None = None):
         super().__init__(500, "config_error", message, details)
 
 
 class InternalError(AppError):
-    def __init__(self, message: str = "Internal server error", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Internal server error", details: list[dict[str, Any]] | None = None):
         super().__init__(500, "internal_error", message, details)
 
 
 class NotImplementedYet(AppError):
-    def __init__(self, message: str = "Not implemented", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Not implemented", details: list[dict[str, Any]] | None = None):
         super().__init__(501, "not_implemented", message, details)
 
 
 class DbUnavailable(AppError):
-    def __init__(self, message: str = "Database unavailable", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Database unavailable", details: list[dict[str, Any]] | None = None):
         super().__init__(503, "db_unavailable", message, details)
 
 
 class QueryTimeout(AppError):
-    def __init__(self, message: str = "Query timeout", details: Optional[list[dict[str, Any]]] = None):
+    def __init__(self, message: str = "Query timeout", details: list[dict[str, Any]] | None = None):
         super().__init__(504, "query_timeout", message, details)
 
 

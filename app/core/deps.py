@@ -1,8 +1,11 @@
-from typing import Any, Callable, List, Optional
-from fastapi import Depends, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.core.security import verify_token
+from collections.abc import Callable
+from typing import Any
+
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 from app.core.errors import AppError
+from app.core.security import verify_token
 from app.shared.roles import allowed
 
 security = HTTPBearer(auto_error=False)
@@ -22,7 +25,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         "sid": payload.get("sid"),
     }
 
-def require_roles(role_list: Optional[str]) -> Callable:
+def require_roles(role_list: str | None) -> Callable:
     def dependency(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
         user_roles = user.get("roles", [])
         if not allowed(role_list, user_roles):

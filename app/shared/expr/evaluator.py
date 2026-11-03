@@ -1,4 +1,4 @@
-import re
+import ast
 from typing import Any, Dict
 from app.shared.expr.functions import HELPER_FUNCS, MATH_FUNCS
 
@@ -7,16 +7,12 @@ def evaluate_expression(expr: str, context: Dict[str, Any]) -> Any:
         return None
     expr_str = expr.strip()
     
-    # Simple substitution and evaluation for safe subset (numbers, basic arithmetic, variable names, ISNA, Math)
-    # Case-insensitive context keys
     ctx = {k.lower(): v for k, v in context.items()}
     
-    # If expr is just a single variable or number or string literal
     if expr_str.lower() in ctx:
         return ctx[expr_str.lower()]
     
     try:
-        # Check if it's a numeric literal
         return float(expr_str) if "." in expr_str else int(expr_str)
     except ValueError:
         pass
@@ -24,18 +20,13 @@ def evaluate_expression(expr: str, context: Dict[str, Any]) -> Any:
     if expr_str.startswith("'") and expr_str.endswith("'") or expr_str.startswith('"') and expr_str.endswith('"'):
         return expr_str[1:-1]
 
-    # Handle Math.* and helper functions and basic arithmetic
-    # For a safe evaluator without eval, we can parse or evaluate tokens.
-    # Let's support safe expression evaluation using Python's ast with strict node whitelisting.
-    import ast
-    
     class SafeEvaluator(ast.NodeVisitor):
         def visit(self, node):
             if isinstance(node, ast.Expression):
                 return self.visit(node.body)
             elif isinstance(node, ast.Constant):
                 return node.value
-            elif isinstance(node, ast.Num): # Python < 3.8 compatibility
+            elif isinstance(node, ast.Num):
                 return node.n
             elif isinstance(node, ast.Str):
                 return node.s
@@ -43,6 +34,8 @@ def evaluate_expression(expr: str, context: Dict[str, Any]) -> Any:
                 name_lower = node.id.lower()
                 if name_lower in ctx:
                     return ctx[name_lower]
+                if name_lower in HELPER_FUNCS:
+                    return HELPER_FUNCS[name_lower]
                 if node.id == "Math":
                     return "MathNamespace"
                 raise ValueError(f"Unknown variable: {node.id}")
@@ -72,8 +65,8 @@ def evaluate_expression(expr: str, context: Dict[str, Any]) -> Any:
                 left = self.visit(node.left)
                 for op, comp in zip(node.ops, node.comparators):
                     right = self.visit(comp)
-                    if isinstance(op, ast.Eq) and not (left == right): return False
-                    if isinstance(op, ast.NotEq) and not (left != right): return False
+                    if isinstance(op, ast.Eq) and left != right: return False
+                    if isinstance(op, ast.NotEq) and left == right: return False
                     if isinstance(op, ast.Lt) and not (left < right): return False
                     if isinstance(op, ast.LtE) and not (left <= right): return False
                     if isinstance(op, ast.Gt) and not (left > right): return False
@@ -84,11 +77,9 @@ def evaluate_expression(expr: str, context: Dict[str, Any]) -> Any:
                 args = [self.visit(arg) for arg in node.args]
                 if callable(func):
                     return func(*args)
-                elif isinstance(func, str) and func.lower() in HELPER_FUNCS:
-                    return HELPER_FUNCS[func.lower()](*args)
-                raise ValueError(f"Unsupported function call")
+                raise ValueError("Unsupported function call")
             else:
-                raise ValueError(f"Unsupported expression construct: {type(node).__name__}")
+                raise TypeError(f"Unsupported expression construct: {type(node).__name__}")
 
     try:
         tree = ast.parse(expr_str, mode='eval')

@@ -1,14 +1,15 @@
 import pytest
+
+from app.core.errors import InvalidSort
 from app.core.pagination import (
     build_keyset_predicate,
-    encode_cursor,
     decode_cursor,
-    resolve_sort,
+    encode_cursor,
     escape_like_string,
     finish_page,
     make_fingerprint,
+    resolve_sort,
 )
-from app.core.errors import InvalidSort
 
 
 def test_encode_decode_cursor():

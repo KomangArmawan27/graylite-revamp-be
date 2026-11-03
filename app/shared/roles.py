@@ -1,6 +1,6 @@
-from typing import Optional, List
 
-def allowed(role_list: Optional[str], user_roles: List[str]) -> bool:
+
+def allowed(role_list: str | None, user_roles: list[str]) -> bool:
     """Exact-name match. 'All' allows everyone. Empty or None means denied."""
     if not role_list or not role_list.strip():
         return False

@@ -1,15 +1,17 @@
 import re
-from typing import Any, Mapping, Tuple, List, Optional
+from collections.abc import Mapping
+from typing import Any
+
 from app.core.errors import AppError
 
 PARAM_REGEX = re.compile(r"::(\w+)::")
 
-def bind(sql: str, values: Mapping[str, Any], required_params: Optional[set[str]] = None) -> Tuple[str, List[Any]]:
+def bind(sql: str, values: Mapping[str, Any], required_params: set[str] | None = None) -> tuple[str, list[Any]]:
     """Return (sql_with_question_marks, params_in_order). Names are matched case-insensitively."""
     required_params = required_params or set()
     
     lower_values = {k.lower(): v for k, v in values.items()}
-    params: List[Any] = []
+    params: list[Any] = []
     
     def replacer(match: re.Match) -> str:
         param_name = match.group(1)

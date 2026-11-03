@@ -1,4 +1,3 @@
-import sys
 
 def gen_grants():
     print("-- Generated grants based on config tables")

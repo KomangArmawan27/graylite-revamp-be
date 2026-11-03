@@ -1,7 +1,7 @@
-from pathlib import Path
 import urllib.parse
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy.engine import URL
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 

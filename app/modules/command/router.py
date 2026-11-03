@@ -1,13 +1,15 @@
 import re
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+
+from fastapi import APIRouter, Depends
 from sqlalchemy import text
-from typing import Any, Dict, List
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
 from app.core.db import get_db_write
 from app.core.deps import get_current_user
-from app.shared.params import bind
 from app.core.errors import AppError
 from app.modules.meta.service import MetaService
+from app.shared.params import bind
 from app.shared.roles import allowed
 
 router = APIRouter(prefix="/screens", tags=["commands"])
@@ -21,6 +23,8 @@ def run_command(
     db: Session = Depends(get_db_write),
     user: dict = Depends(get_current_user),
 ):
+    if not settings.ENABLE_WRITES:
+        raise AppError(status_code=403, code="forbidden", message="Writes are disabled")
     user_roles = user.get("roles", [])
     screen = meta_service.get_screen(db, hdrId)
     if not allowed(screen.get("hdr_level"), user_roles):

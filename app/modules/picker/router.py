@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, Query, Request
+
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import text
-from typing import Optional, Any
+
 from app.core.db import get_db
 from app.core.deps import get_current_user
-from app.shared.params import bind
 from app.modules.meta.service import MetaService
+from app.shared.params import bind
+from app.shared.types import serialize_row
 
 router = APIRouter(prefix="/pickers", tags=["pickers"])
 meta_service = MetaService()
@@ -13,7 +14,7 @@ meta_service = MetaService()
 @router.get("/{hdrId}/rows")
 def get_picker_rows(
     hdrId: int,
-    q: Optional[str] = None,
+    q: str | None = None,
     page: int = 1,
     pageSize: int = 50,
     request: Request = None,
@@ -41,7 +42,7 @@ def get_picker_rows(
     
     try:
         rows = db.connection().exec_driver_sql(bound_sql, tuple(bound_params)).mappings().all()
-        items = [dict(r) for r in rows]
+        items = [serialize_row(dict(r)) for r in rows]
         if q:
             q_lower = q.lower()
             items = [item for item in items if any(q_lower in str(v).lower() for v in item.values() if v is not None)]

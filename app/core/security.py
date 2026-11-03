@@ -1,9 +1,11 @@
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
 import jwt
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError, InvalidHashError
+from argon2.exceptions import InvalidHashError, VerifyMismatchError
+
 from app.core.config import settings
 
 ph = PasswordHasher()
@@ -44,23 +46,23 @@ def verify_password(plain_password: str, hashed_password: Any) -> bool:
 
     return False
 
-def _get_private_key() -> Optional[str]:
+def _get_private_key() -> str | None:
     path = settings.JWT_PRIVATE_KEY_PATH
     if os.path.exists(path):
         with open(path, "r") as f:
          return f.read()
     return None
 
-def _get_public_key() -> Optional[str]:
+def _get_public_key() -> str | None:
     path = settings.JWT_PUBLIC_KEY_PATH
     if os.path.exists(path):
         with open(path, "r") as f:
             return f.read()
     return None
 
-def create_access_token(data: dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.JWT_ACCESS_TTL_MIN))
+    expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=settings.JWT_ACCESS_TTL_MIN))
     to_encode.update({"exp": expire})
     private_key = _get_private_key()
     if private_key:
@@ -71,7 +73,7 @@ def create_access_token(data: dict[str, Any], expires_delta: Optional[timedelta]
 
 def create_refresh_token(data: dict[str, Any]) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.JWT_REFRESH_TTL_DAYS)
+    expire = datetime.now(UTC) + timedelta(days=settings.JWT_REFRESH_TTL_DAYS)
     to_encode.update({"exp": expire})
     private_key = _get_private_key()
     if private_key:
@@ -86,6 +88,6 @@ def verify_token(token: str) -> dict[str, Any]:
             return jwt.decode(token, public_key, algorithms=["RS256"], options={"verify_sub": False})
         else:
             return jwt.decode(token, "dev-secret-key", algorithms=["HS256"], options={"verify_sub": False})
-    except jwt.PyJWTError as e:
+    except jwt.PyJWTError:
         from app.core.errors import AppError
         raise AppError(status_code=401, code="unauthorized", message="Invalid or expired token")

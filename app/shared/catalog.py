@@ -1,12 +1,14 @@
 import time
-from typing import Any, Dict, List, Optional
-from sqlalchemy.orm import Session
+from typing import Any
+
 from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
 
-_catalog_cache: Dict[str, tuple[float, List[Dict[str, Any]]]] = {}
+_catalog_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
-def get_table_catalog(db: Session, table_name: str) -> List[Dict[str, Any]]:
+def get_table_catalog(db: Session, table_name: str) -> list[dict[str, Any]]:
     now = time.time()
     if table_name in _catalog_cache:
         cached_time, columns = _catalog_cache[table_name]
@@ -40,7 +42,7 @@ def get_table_catalog(db: Session, table_name: str) -> List[Dict[str, Any]]:
             })
         _catalog_cache[table_name] = (now, columns)
         return columns
-    except Exception as e:
+    except Exception:
         # Return empty list if table not found or error
         return []
 

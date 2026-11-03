@@ -1,7 +1,8 @@
+import logging
+import re
 import time
 import uuid
-import re
-import logging
+
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 

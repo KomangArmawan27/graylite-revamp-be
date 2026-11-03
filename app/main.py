@@ -1,10 +1,14 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import RequestLoggingMiddleware
+from app.modules import admin, auth, browser, command, form, grid, health, menu, meta, picker
 
-from app.modules import health, auth, menu, meta, browser, form, grid, picker, command, admin
+logger = logging.getLogger("erp-api")
 
 app = FastAPI(
     title="ERP API",
@@ -13,6 +17,10 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info(f"startup db_name={settings.DB_NAME} enable_writes={settings.ENABLE_WRITES} enable_delete={settings.ENABLE_DELETE}")
 
 # CORS middleware
 origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]

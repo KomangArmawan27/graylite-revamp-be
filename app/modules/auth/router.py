@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.modules.auth.schemas import LoginRequest, RefreshRequest, TokenResponse

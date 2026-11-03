@@ -1,5 +1,6 @@
+
 from pydantic import BaseModel
-from typing import List, Optional
+
 
 class MenuItem(BaseModel):
     hdrId: int
@@ -7,9 +8,9 @@ class MenuItem(BaseModel):
     caption: str
     type: str
     module: str
-    group: Optional[str] = None
-    detailHdrId: Optional[int] = None
+    group: str | None = None
+    detailHdrId: int | None = None
 
 class MenuResponse(BaseModel):
     count: int
-    items: List[MenuItem]
+    items: list[MenuItem]

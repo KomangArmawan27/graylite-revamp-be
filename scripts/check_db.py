@@ -1,6 +1,9 @@
 import sys
+
 from sqlalchemy import create_engine
-from app.core.config import settings, get_sqlalchemy_database_url
+
+from app.core.config import get_sqlalchemy_database_url, settings
+
 
 def check_db():
     print("Checking database connectivity...")

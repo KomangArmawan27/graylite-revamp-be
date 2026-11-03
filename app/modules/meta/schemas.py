@@ -1,5 +1,7 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from pydantic import BaseModel
+
 
 class ColumnMeta(BaseModel):
     name: str
@@ -13,7 +15,7 @@ class FilterMeta(BaseModel):
     name: str
     label: str
     type: str
-    default: Optional[Any] = None
+    default: Any | None = None
     required: bool = False
     hidden: bool = False
 
@@ -23,44 +25,44 @@ class BrowserMetaResponse(BaseModel):
     schemaVersion: str
     rowKey: str
     dateColumn: str
-    detailCode: Optional[str] = None
+    detailCode: str | None = None
     canAdd: bool = False
     canRemove: bool = False
     style: str = "Fit"
-    columns: List[ColumnMeta]
-    filters: List[FilterMeta]
-    layout: Dict[str, Any]
-    commands: List[Dict[str, Any]]
+    columns: list[ColumnMeta]
+    filters: list[FilterMeta]
+    layout: dict[str, Any]
+    commands: list[dict[str, Any]]
 
 class FieldMeta(BaseModel):
     name: str
     caption: str
     widget: str
-    dataType: Optional[str] = None
+    dataType: str | None = None
     readonly: bool = False
     hidden: bool = False
     update: bool = False
     inlineWithPrevious: bool = False
-    pickerCode: Optional[str] = None
-    gridCode: Optional[str] = None
-    saveWithForm: Optional[bool] = None
-    options: Optional[List[Dict[str, Any]]] = None
+    pickerCode: str | None = None
+    gridCode: str | None = None
+    saveWithForm: bool | None = None
+    options: list[dict[str, Any]] | None = None
 
 class TabMeta(BaseModel):
     name: str
-    fields: List[FieldMeta]
+    fields: list[FieldMeta]
 
 class FormMetaResponse(BaseModel):
     code: str
     caption: str
     schemaVersion: str
     idField: str
-    titleFields: List[str]
-    docHeader: Optional[str] = None
+    titleFields: list[str]
+    docHeader: str | None = None
     canSave: bool = True
     journalView: bool = False
-    tabs: List[TabMeta]
-    variables: List[Dict[str, Any]]
-    grids: Dict[str, Any]
-    defaults: Dict[str, Any]
-    commands: List[Dict[str, Any]]
+    tabs: list[TabMeta]
+    variables: list[dict[str, Any]]
+    grids: dict[str, Any]
+    defaults: dict[str, Any]
+    commands: list[dict[str, Any]]

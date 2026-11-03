@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+
 from app.core.db import get_db
 from app.core.deps import get_current_user
-from app.modules.menu.service import get_menu_items
 from app.modules.menu.schemas import MenuResponse
+from app.modules.menu.service import get_menu_items
 
 router = APIRouter(prefix="/menu", tags=["menu"])
 

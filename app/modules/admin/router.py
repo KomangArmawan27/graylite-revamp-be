@@ -1,15 +1,16 @@
-from fastapi import APIRouter, Depends, Query
+
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from typing import Optional
+
 from app.core.db import get_db
 from app.core.deps import get_current_user
-from app.shared.catalog import clear_catalog_cache
 from app.modules.meta.service import clear_meta_cache
+from app.shared.catalog import clear_catalog_cache
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.get("/lint")
-def lint_config(hdrId: Optional[int] = None, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+def lint_config(hdrId: int | None = None, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     return {"reports": []}
 
 @router.post("/cache/refresh")

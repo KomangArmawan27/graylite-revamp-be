@@ -1,12 +1,21 @@
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+import hashlib
+import json
+import re
+from typing import Any
+
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import text
-from typing import Any, Dict
+from sqlalchemy.orm import Session
+
+from app.core.cache import InFlight, Replay, idempotency_store
+from app.core.config import settings
 from app.core.db import get_db, get_db_write
 from app.core.deps import get_current_user
-from app.modules.meta.service import MetaService
 from app.core.errors import AppError
-from app.core.config import settings
+from app.modules.meta.service import MetaService
+from app.shared.expr.evaluator import evaluate_expression
+from app.shared.roles import allowed
+from app.shared.types import normalize_value, serialize_row
 
 router = APIRouter(prefix="/forms", tags=["forms"])
 meta_service = MetaService()
@@ -14,9 +23,28 @@ meta_service = MetaService()
 @router.get("/{hdrId}/new")
 def get_new_form(hdrId: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []), user=user)
+    details = meta_service.repo.get_form_details(db, hdrId)
+    defaults = {}
+    context = {
+        "_USERID": user.get("id") if user else 1,
+        "_USERLOGIN": user.get("login") if user else "system",
+        "_CCID": user.get("ccId") if user else 1,
+        "_USERLEVEL": ",".join(user.get("roles", [])),
+    }
+    for d in details:
+        col_name = d.get("col_name")
+        default_expr = d.get("col_defaultvalue")
+        if col_name and default_expr:
+            try:
+                val = evaluate_expression(str(default_expr).strip(), context)
+                if val is not None:
+                    defaults[col_name] = normalize_value(val)
+            except Exception:
+                pass
+    grids_empty = {g_id: {"rows": []} for g_id in meta.get("grids", {}).keys()}
     return {
-        "header": meta.get("defaults", {}),
-        "grids": {},
+        "header": defaults,
+        "grids": grids_empty,
         "schemaVersion": meta.get("schemaVersion"),
     }
 
@@ -48,28 +76,61 @@ def get_form_record(hdrId: int, recordId: Any, db: Session = Depends(get_db), us
                 else:
                     grid_query = f"SELECT * FROM ({grid_expr}) x WHERE x.doc_id = :id"
                 g_rows = db.execute(text(grid_query), {"id": recordId}).mappings().all()
-                grids_data[g_id_str] = {"rows": [dict(r) for r in g_rows]}
+                grids_data[g_id_str] = {"rows": [serialize_row(dict(r)) for r in g_rows]}
             else:
                 grids_data[g_id_str] = {"rows": []}
         except Exception:
             grids_data[g_id_str] = {"rows": []}
 
     return {
-        "header": dict(header_row),
+        "header": serialize_row(dict(header_row)),
         "grids": grids_data,
         "schemaVersion": meta.get("schemaVersion"),
     }
 
 @router.post("/{hdrId}/records")
-def create_form_record(hdrId: int, payload: dict, db: Session = Depends(get_db_write), user: dict = Depends(get_current_user)):
+def create_form_record(
+    hdrId: int,
+    payload: dict,
+    request: Request,
+    db: Session = Depends(get_db_write),
+    user: dict = Depends(get_current_user),
+):
     if not settings.ENABLE_WRITES:
         raise AppError(status_code=403, code="forbidden", message="Writes are disabled")
-    meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []), user=user)
+    
+    user_roles = user.get("roles", [])
+    if not meta_service.can_add(db, hdrId, user_roles):
+        raise AppError(status_code=403, code="forbidden", message="Access denied (role or missing browser)")
+
+    meta = meta_service.get_form_meta(db, hdrId, user_roles, user=user)
     
     if payload.get("schemaVersion") != meta.get("schemaVersion"):
         raise AppError(status_code=409, code="schema_stale", message="Form configuration has changed. Please reload.")
 
-    header_data = payload.get("header", {})
+    idempotency_key = request.headers.get("Idempotency-Key")
+    body_hash = ""
+    user_id = user.get("id", 1)
+    route_path = request.url.path
+
+    if idempotency_key:
+        if not re.match(r"^[A-Za-z0-9_-]{8,64}$", idempotency_key):
+            raise AppError(status_code=400, code="bad_request", message="Invalid idempotency key format")
+        body_bytes = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+        body_hash = hashlib.sha256(body_bytes).hexdigest()
+        
+        res = idempotency_store.begin(idempotency_key, user_id, route_path, body_hash)
+        if isinstance(res, Replay):
+            headers = {**res.headers, "Idempotent-Replay": "true", "X-Request-Id": getattr(request.state, "request_id", "unknown")}
+            return Response(content=res.body, status_code=res.status, media_type="application/json", headers=headers)
+        elif res == "conflict_body":
+            raise AppError(status_code=409, code="key_reused", message="Idempotency key reused with different request body", details=[{"code": "key_reused"}])
+        elif isinstance(res, InFlight):
+            raise AppError(status_code=409, code="in_progress", message="Request with this idempotency key is already in progress", details=[{"code": "in_progress"}])
+
+    raw_header_data = payload.get("header", {})
+    header_data = meta_service.process_header_save(db, hdrId, raw_header_data, user, is_create=True)
+
     header = meta_service.get_screen(db, hdrId)
     base_table = header.get("hdr_basetable")
     if not base_table:
@@ -92,22 +153,39 @@ def create_form_record(hdrId: int, payload: dict, db: Session = Depends(get_db_w
         row = db.execute(text(insert_sql), header_data).first()
         new_id = row[0] if row else None
         db.commit()
-        return get_form_record(hdrId, new_id, db, user)
+        resp_data = get_form_record(hdrId, new_id, db, user)
+        if idempotency_key:
+            resp_body = json.dumps(resp_data, default=str).encode("utf-8")
+            idempotency_store.finish(idempotency_key, user_id, route_path, body_hash, 200, resp_body, {"Content-Type": "application/json"})
+        return resp_data
     except Exception as e:
         db.rollback()
         raise AppError(status_code=409, code="conflict", message=str(e))
 
 @router.put("/{hdrId}/records/{recordId}")
-def update_form_record(hdrId: int, recordId: Any, payload: dict, db: Session = Depends(get_db_write), user: dict = Depends(get_current_user)):
+def update_form_record(
+    hdrId: int,
+    recordId: Any,
+    payload: dict,
+    db: Session = Depends(get_db_write),
+    user: dict = Depends(get_current_user),
+):
     if not settings.ENABLE_WRITES:
         raise AppError(status_code=403, code="forbidden", message="Writes are disabled")
-    meta = meta_service.get_form_meta(db, hdrId, user.get("roles", []), user=user)
+    
+    user_roles = user.get("roles", [])
+    meta = meta_service.get_form_meta(db, hdrId, user_roles, user=user)
+    header = meta_service.get_screen(db, hdrId)
+
+    if not allowed(header.get("hdr_level"), user_roles):
+        raise AppError(status_code=403, code="forbidden", message="Access denied")
     
     if payload.get("schemaVersion") != meta.get("schemaVersion"):
         raise AppError(status_code=409, code="schema_stale", message="Form configuration has changed.")
 
-    header_data = payload.get("header", {})
-    header = meta_service.get_screen(db, hdrId)
+    raw_header_data = payload.get("header", {})
+    header_data = meta_service.process_header_save(db, hdrId, raw_header_data, user, is_create=False, record_id=recordId)
+
     base_table = header.get("hdr_basetable")
     if not base_table:
         raise AppError(status_code=400, code="bad_request", message="Base table not found")
@@ -125,6 +203,9 @@ def update_form_record(hdrId: int, recordId: Any, payload: dict, db: Session = D
         if lock_field in lock_row and lock_row[lock_field] != lock_val:
             raise AppError(status_code=409, code="conflict", message="Document already in flow (locked)")
 
+        if not header_data:
+            return get_form_record(hdrId, recordId, db, user)
+
         set_clauses = ", ".join([f"[{k}] = :{k}" for k in header_data.keys()])
         update_data = {**header_data, "id": recordId}
         update_sql = f"UPDATE {base_table} SET {set_clauses} WHERE [{pk_field}] = :id"
@@ -140,10 +221,48 @@ def update_form_record(hdrId: int, recordId: Any, payload: dict, db: Session = D
         raise AppError(status_code=409, code="conflict", message=str(e))
 
 @router.delete("/{hdrId}/records/{recordId}")
-def delete_form_record(hdrId: int, recordId: Any, db: Session = Depends(get_db_write), user: dict = Depends(get_current_user)):
-    if not settings.ENABLE_DELETE:
-        raise AppError(status_code=501, code="not_implemented", message="Delete is currently disabled")
-    return {"ok": True}
+def delete_form_record(
+    hdrId: int,
+    recordId: Any,
+    db: Session = Depends(get_db_write),
+    user: dict = Depends(get_current_user),
+):
+    if not settings.ENABLE_WRITES or not settings.ENABLE_DELETE:
+        raise AppError(status_code=403, code="forbidden", message="Deletes are disabled")
+    
+    user_roles = user.get("roles", [])
+    if not meta_service.can_remove(db, hdrId, user_roles):
+        raise AppError(status_code=403, code="forbidden", message="Access denied")
+
+    meta = meta_service.get_form_meta(db, hdrId, user_roles, user=user)
+    header = meta_service.get_screen(db, hdrId)
+    base_table = header.get("hdr_basetable")
+    if not base_table:
+        raise AppError(status_code=400, code="bad_request", message="Base table not found")
+
+    pk_field = meta.get("idField", "id")
+    lock_field = settings.EDIT_LOCK_FIELD
+    lock_val = settings.EDIT_LOCK_VALUE
+
+    try:
+        lock_sql = f"SELECT [{lock_field}] FROM {base_table} WITH (UPDLOCK, ROWLOCK) WHERE [{pk_field}] = :id"
+        lock_row = db.execute(text(lock_sql), {"id": recordId}).mappings().first()
+        if not lock_row:
+            raise AppError(status_code=404, code="not_found", message="Record not found")
+        
+        if lock_field in lock_row and lock_row[lock_field] != lock_val:
+            raise AppError(status_code=409, code="conflict", message="Document already in flow (locked)")
+
+        delete_sql = f"DELETE FROM {base_table} WHERE [{pk_field}] = :id"
+        db.execute(text(delete_sql), {"id": recordId})
+        db.commit()
+        return {"ok": True}
+    except AppError:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise AppError(status_code=409, code="conflict", message=str(e))
 
 @router.get("/{hdrId}/fields/{name}/options")
 def get_field_options(
@@ -170,7 +289,7 @@ def get_field_options(
     elif uitype in ("comboquery", "xcomboquery") and expr:
         try:
             rows = db.connection().exec_driver_sql(expr).mappings().all()
-            return {"options": [dict(r) for r in rows]}
+            return {"options": [serialize_row(dict(r)) for r in rows]}
         except Exception:
             return {"options": []}
             

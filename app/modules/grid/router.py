@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from typing import Any
+
+from fastapi import APIRouter, Depends
 from sqlalchemy import text
-from typing import Optional, Any
+from sqlalchemy.orm import Session
+
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.modules.meta.service import MetaService
+from app.shared.types import serialize_row
 
 router = APIRouter(prefix="/grids", tags=["grids"])
 meta_service = MetaService()
@@ -12,7 +15,7 @@ meta_service = MetaService()
 @router.get("/{hdrId}/rows")
 def get_grid_rows(
     hdrId: int,
-    parentId: Optional[Any] = None,
+    parentId: Any | None = None,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -36,6 +39,6 @@ def get_grid_rows(
 
     try:
         rows = db.execute(text(query), params).mappings().all()
-        return {"items": [dict(r) for r in rows]}
+        return {"items": [serialize_row(dict(r)) for r in rows]}
     except Exception:
         return {"items": []}
