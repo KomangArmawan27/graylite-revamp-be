@@ -152,6 +152,48 @@ def create_form_record(
     try:
         row = db.execute(text(insert_sql), header_data).first()
         new_id = row[0] if row else None
+
+        grids_payload = payload.get("grids", {})
+        for g_id_str, g_content in grids_payload.items():
+            try:
+                g_hdr_id = int(g_id_str)
+                grid_screen = meta_service.get_screen(db, g_hdr_id)
+                grid_base_table = grid_screen.get("hdr_basetable")
+                if not grid_base_table:
+                    continue
+
+                grid_cols = meta_service.repo.get_grid_columns(db, g_hdr_id)
+                parent_field = "doc_id"
+                row_number_field = "trans_idx"
+                allowed_cols = set()
+                for gc in grid_cols:
+                    col_name = gc.get("col_name")
+                    if col_name:
+                        allowed_cols.add(col_name.lower())
+                    if gc.get("col_key") == 2:
+                        parent_field = col_name
+                    elif gc.get("col_key") == 3:
+                        row_number_field = col_name
+
+                rows = g_content.get("rows", [])
+                for idx, r_data in enumerate(rows, start=1):
+                    row_dict = {parent_field: new_id}
+                    if row_number_field:
+                        row_dict[row_number_field] = r_data.get(row_number_field, idx)
+
+                    for rk, rv in r_data.items():
+                        if rk.lower() in allowed_cols and rk.lower() not in (parent_field.lower(), row_number_field.lower() if row_number_field else ""):
+                            row_dict[rk] = rv
+
+                    g_cols = list(row_dict.keys())
+                    if g_cols:
+                        g_col_names = ", ".join([f"[{c}]" for c in g_cols])
+                        g_placeholders = ", ".join([f":{c}" for c in g_cols])
+                        grid_insert_sql = f"INSERT INTO {grid_base_table} ({g_col_names}) VALUES ({g_placeholders})"
+                        db.execute(text(grid_insert_sql), row_dict)
+            except Exception as ex:
+                raise ValueError(f"Grid {g_id_str} insert error: {ex}")
+
         db.commit()
         resp_data = get_form_record(hdrId, new_id, db, user)
         if idempotency_key:
