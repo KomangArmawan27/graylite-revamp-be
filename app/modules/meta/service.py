@@ -325,8 +325,13 @@ class MetaService:
             scale = int(c.get("col_scale") or 0)
             controlexpr = (c.get("col_controlexpr") or "").strip()
             
-            if uitype == "formula" or (not uitype and controlexpr):
+            is_picker_or_combo = uitype in ("picker", "combobox")
+            if controlexpr and not is_picker_or_combo and uitype != "formula":
                 uitype = "formula"
+
+            is_formula = (uitype == "formula")
+            is_update = bool(c.get("col_update"))
+            is_readonly = bool(c.get("col_readonly") or (is_formula and not is_update))
             
             picker_code = controlexpr if uitype == "picker" else None
             picker_hdr_id = self.resolve_hdr_id(db, picker_code) if picker_code else None
@@ -337,15 +342,15 @@ class MetaService:
                 "widget": uitype,
                 "type": normalize_type(uitype, datatype, c_name, scale),
                 "hidden": bool(c.get("col_hide") or False),
-                "readonly": bool(c.get("col_readonly") or (uitype == "formula")),
-                "update": bool(c.get("col_update")),
+                "readonly": is_readonly,
+                "update": is_update,
                 "scale": scale,
                 "width": int(c.get("col_width") or 100),
             }
             if picker_code and uitype == "picker":
                 col_meta["pickerCode"] = picker_code
                 col_meta["pickerHdrId"] = picker_hdr_id
-            if uitype == "formula" or controlexpr:
+            if is_formula or (controlexpr and not is_picker_or_combo):
                 col_meta["expression"] = controlexpr
             formatted_columns.append(col_meta)
 

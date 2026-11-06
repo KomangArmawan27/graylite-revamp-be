@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.meta.service import MetaService
 from app.shared.roles import allowed
+from app.shared.types import clean_caption
 
 meta_service = MetaService()
 
@@ -33,7 +34,7 @@ def get_menu_items(db: Session, user_roles: list[str]) -> dict[str, Any]:
         if not allowed(hdr_level, user_roles):
             continue
 
-        cap = (s.get("hdr_cap") or "").strip()
+        cap = clean_caption(s.get("hdr_cap") or "")
         if not cap:
             parts = code.split(".")
             if len(parts) > 1:
